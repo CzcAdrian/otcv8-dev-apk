@@ -194,11 +194,13 @@ jobs:
           }
 
           Write-Host "===== PACKAGE ANDROID APPLICATION ====="
+          $solutionDir = Join-Path (Get-Location).Path "android\"
 
           MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
             /t:Build `
             /p:Configuration=Release `
             /p:Platform=ARM64 `
+            /p:SolutionDir="$solutionDir" `
             /p:BUILD_REVISION=${{ github.run_number }} `
             /v:normal
 
