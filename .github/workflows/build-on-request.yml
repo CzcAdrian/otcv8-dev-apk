@@ -192,31 +192,68 @@ jobs:
             throw "Android compilation failed"
           }
 
-      - name: Find generated APK
+      
+      - name: Diagnose Android build output
         run: |
           $ErrorActionPreference = "Stop"
 
+          Write-Host "===== APK SEARCH ====="
+
           $apks = @(
-            Get-ChildItem -Path "android" `
+            Get-ChildItem -Path "." `
               -Filter "*.apk" `
-              -Recurse -File
+              -Recurse -File `
+              -ErrorAction SilentlyContinue
           )
 
-          if ($apks.Count -eq 0) {
-            throw "No APK was generated"
+          if ($apks.Count -gt 0) {
+            foreach ($apk in $apks) {
+              Write-Host "APK FOUND:"
+              Write-Host $apk.FullName
+              Write-Host "Size: $($apk.Length) bytes"
+            }
+
+            New-Item -ItemType Directory `
+              -Force -Path "output" | Out-Null
+
+            $apk = $apks |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+
+            Copy-Item $apk.FullName `
+              "output/OTCv8-Tibia860-ARM64.apk"
+
+            Write-Host "APK copied successfully"
+          }
+          else {
+            Write-Host "No APK found in workspace"
           }
 
-          New-Item -ItemType Directory `
-            -Force -Path "output" | Out-Null
+          Write-Host "===== ANDROID BUILD FILES ====="
 
-          $apk = $apks |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
+          Get-ChildItem -Path "android" `
+            -Recurse -File `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.Extension -in @(
+                ".apk", ".so", ".aab", ".log"
+              )
+            } |
+            Select-Object FullName, Length |
+            Format-Table -AutoSize
 
-          Copy-Item $apk.FullName `
-            "output/OTCv8-Tibia860-ARM64.apk"
+          Write-Host "===== ANDROID PROJECTS ====="
 
-          Write-Host "APK generated successfully"
+          Get-ChildItem -Path "android" `
+            -Recurse -File `
+            -Include "*.sln", "*.androidproj", "*.vcxproj" |
+            Select-Object FullName |
+            Format-Table -AutoSize
+
+          if ($apks.Count -eq 0) {
+            throw "Build finished but no APK was found"
+          }
+
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
