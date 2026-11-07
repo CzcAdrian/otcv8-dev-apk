@@ -210,6 +210,31 @@ jobs:
             } |
             Format-Table -AutoSize
 
+      
+      - name: Configure Apache Ant
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $antHome = $env:ANT_HOME
+
+          if (!(Test-Path "$antHome\bin\ant.bat")) {
+            throw "Apache Ant executable not found"
+          }
+
+          $env:PATH = "$antHome\bin;$env:PATH"
+
+          "ANT_HOME=$antHome" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Append -Encoding utf8
+
+          "$antHome\bin" | Out-File `
+            -FilePath $env:GITHUB_PATH `
+            -Append -Encoding utf8
+
+          Write-Host "===== VERIFY APACHE ANT ====="
+          & "$antHome\bin\ant.bat" -version
+
       - name: Build Android APK
         timeout-minutes: 40
         run: |
