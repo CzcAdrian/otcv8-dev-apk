@@ -166,6 +166,7 @@ jobs:
 
           Write-Host "NDK installed: $env:VS_NdkRoot"
 
+      
       - name: Build Android APK
         timeout-minutes: 40
         run: |
@@ -180,17 +181,31 @@ jobs:
           $env:VS_NdkRoot = Join-Path $sdkRoot `
             "ndk\21.4.7075529"
 
-          Set-Location android
+          Write-Host "===== BUILD NATIVE LIBRARIES ====="
 
-          MSBuild.exe `
+          MSBuild.exe "android/otclientv8.sln" `
             /p:Configuration=Release `
             /p:Platform=ARM64 `
             /p:BUILD_REVISION=${{ github.run_number }} `
             /m
 
           if ($LASTEXITCODE -ne 0) {
-            throw "Android compilation failed"
+            throw "Native compilation failed"
           }
+
+          Write-Host "===== PACKAGE ANDROID APPLICATION ====="
+
+          MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
+            /t:Package `
+            /p:Configuration=Release `
+            /p:Platform=ARM64 `
+            /p:BUILD_REVISION=${{ github.run_number }} `
+            /v:normal
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Android packaging failed"
+          }
+
 
       
       - name: Diagnose Android build output
