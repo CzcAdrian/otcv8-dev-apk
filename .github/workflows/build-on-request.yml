@@ -235,6 +235,49 @@ jobs:
           Write-Host "===== VERIFY APACHE ANT ====="
           & "$antHome\bin\ant.bat" -version
 
+      
+      - name: Install legacy Android SDK Tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $sdkRoot = $env:ANDROID_HOME
+          $url = "https://dl.google.com/android/repository/tools_r25.2.5-windows.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "android-tools-legacy.zip"
+          $extract = Join-Path $env:RUNNER_TEMP "android-tools-legacy"
+
+          Write-Host "===== DOWNLOAD LEGACY SDK TOOLS ====="
+          Invoke-WebRequest -Uri $url -OutFile $zip
+
+          Write-Host "===== EXTRACT LEGACY SDK TOOLS ====="
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          $legacyTools = Join-Path $extract "tools"
+          $legacyBuild = Join-Path $legacyTools "ant\build.xml"
+
+          if (!(Test-Path $legacyBuild)) {
+            throw "Legacy Android Ant build.xml not found"
+          }
+
+          Write-Host "===== INSTALL LEGACY ANT RULES ====="
+
+          $target = Join-Path $sdkRoot "tools\ant"
+          New-Item -ItemType Directory -Path $target -Force |
+            Out-Null
+
+          Copy-Item `
+            -Path (Join-Path $legacyTools "ant\*") `
+            -Destination $target `
+            -Recurse -Force
+
+          Write-Host "===== VERIFY ====="
+
+          if (!(Test-Path (Join-Path $target "build.xml"))) {
+            throw "Legacy Android Ant installation failed"
+          }
+
+          Write-Host "Legacy Android Ant rules installed"
+
       - name: Build Android APK
         timeout-minutes: 40
         run: |
