@@ -196,7 +196,7 @@ jobs:
           Write-Host "===== PACKAGE ANDROID APPLICATION ====="
 
           MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
-            /t:Package `
+            /t:Build `
             /p:Configuration=Release `
             /p:Platform=ARM64 `
             /p:BUILD_REVISION=${{ github.run_number }} `
