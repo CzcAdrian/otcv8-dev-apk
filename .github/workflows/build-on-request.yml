@@ -56,6 +56,7 @@ jobs:
             Write-Host "$file : $($info.Length) bytes"
           }
 
+      
       - name: Create Android data.zip
         run: |
           $ErrorActionPreference = "Stop"
@@ -77,15 +78,30 @@ jobs:
           )
 
           try {
-            $entries = $zip.Entries.FullName
+            $entries = @(
+              $zip.Entries | ForEach-Object {
+                $_.FullName.Replace('\', '/')
+              }
+            )
+
+            Write-Host "Checking Tibia 8.60 files..."
 
             foreach ($file in @(
               "data/things/860/Tibia.dat",
               "data/things/860/Tibia.spr"
             )) {
               if ($entries -notcontains $file) {
+                Write-Host "ZIP entries containing things:"
+                $entries | Where-Object {
+                  $_ -match "things"
+                } | ForEach-Object {
+                  Write-Host $_
+                }
+
                 throw "Missing ZIP entry: $file"
               }
+
+              Write-Host "Verified: $file"
             }
 
             Write-Host "Android assets verified"
@@ -93,6 +109,7 @@ jobs:
           finally {
             $zip.Dispose()
           }
+
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
