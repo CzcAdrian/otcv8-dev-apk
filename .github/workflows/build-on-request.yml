@@ -304,8 +304,24 @@ jobs:
             throw "Native compilation failed"
           }
 
+          
           Write-Host "===== PACKAGE ANDROID APPLICATION ====="
+
           $solutionDir = Join-Path (Get-Location).Path "android\"
+          $antHome = $env:ANT_HOME
+
+          if (!(Test-Path (Join-Path $antHome "bin\ant.bat"))) {
+            throw "Apache Ant executable not found"
+          }
+
+          Write-Host "===== ANT CONFIGURATION ====="
+          Write-Host "ANT_HOME=$antHome"
+
+          $androidTargets = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\MDD\Android\V150\Android.Common.targets"
+
+          Select-String -Path $androidTargets `
+            -Pattern "AntRootDirectory|AntHome|AntPath|ant.bat" `
+            -Context 3,3
 
           MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
             /t:Build `
@@ -314,6 +330,7 @@ jobs:
             /p:SolutionDir="$solutionDir" `
             /p:BUILD_REVISION=${{ github.run_number }} `
             /v:normal
+
 
           if ($LASTEXITCODE -ne 0) {
             throw "Android packaging failed"
