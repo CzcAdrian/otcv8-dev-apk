@@ -1,4 +1,3 @@
-
 name: Build OTCv8 Android 8.60
 
 on:
@@ -393,6 +392,8 @@ jobs:
             /p:Configuration=Release `
             /p:Platform=ARM64 `
             /p:SolutionDir="$solutionDir" `
+            /p:VS_AntHome="$antHome" `
+            /p:VS_AndroidHome="$sdkRoot" `
             /p:BUILD_REVISION=${{ github.run_number }} `
             /v:normal
 
