@@ -1,4 +1,4 @@
-name: Build OTCv8 Android 8.60
+name: Diagnose OTCv8 Android Legacy SDK
 
 on:
   workflow_dispatch:
@@ -8,9 +8,9 @@ permissions:
 
 jobs:
   Android:
-    name: Build OTCv8 Android ARM64
+    name: Diagnose Android Ant dependencies (no build)
     runs-on: windows-2022
-    timeout-minutes: 120
+    timeout-minutes: 20
 
     defaults:
       run:
@@ -19,590 +19,85 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Download Tibia 8.60 assets
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Locate Android SDK
         run: |
           $ErrorActionPreference = "Stop"
-
-          $assetPath = "data/things/860"
-
-          New-Item -ItemType Directory `
-            -Force -Path $assetPath | Out-Null
-
-          gh release download assets-860-v1 `
-            --repo "${{ github.repository }}" `
-            --pattern "Tibia.dat" `
-            --pattern "Tibia.spr" `
-            --dir $assetPath
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to download Tibia assets"
-          }
-
-          foreach ($file in @("Tibia.dat", "Tibia.spr")) {
-            $path = Join-Path $assetPath $file
-
-            if (!(Test-Path $path)) {
-              throw "Missing required file: $path"
-            }
-
-            $info = Get-Item $path
-
-            if ($info.Length -eq 0) {
-              throw "Empty file: $path"
-            }
-
-            Write-Host "$file : $($info.Length) bytes"
-          }
-
-      - name: Create Android data.zip
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          powershell.exe -NoProfile `
-            -ExecutionPolicy Bypass `
-            -File .\create_android_assets.ps1
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Android asset generation failed"
-          }
-
-          $zipPath = "android/otclientv8/assets/data.zip"
-
-          if (!(Test-Path $zipPath)) {
-            throw "data.zip was not generated"
-          }
-
-          Add-Type -AssemblyName System.IO.Compression
-
-          $zip = [System.IO.Compression.ZipFile]::OpenRead(
-            (Resolve-Path $zipPath).Path
-          )
-
-          try {
-            $entries = @(
-              $zip.Entries | ForEach-Object {
-                $_.FullName.Replace('\', '/')
-              }
-            )
-
-            Write-Host "Checking Tibia 8.60 files..."
-
-            foreach ($file in @(
-              "data/things/860/Tibia.dat",
-              "data/things/860/Tibia.spr"
-            )) {
-              if ($entries -notcontains $file) {
-                Write-Host "ZIP entries containing things:"
-
-                $entries | Where-Object {
-                  $_ -match "things"
-                } | ForEach-Object {
-                  Write-Host $_
-                }
-
-                throw "Missing ZIP entry: $file"
-              }
-
-              Write-Host "Verified: $file"
-            }
-
-            Write-Host "Android assets verified"
-          }
-          finally {
-            $zip.Dispose()
-          }
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Extract Android libraries
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          if (!(Test-Path "android_libs.7z")) {
-            throw "android_libs.7z not found"
-          }
-
-          New-Item -ItemType Directory `
-            -Force -Path "C:\android" | Out-Null
-
-          7z x android_libs.7z -aoa -oC:\android
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract android_libs.7z"
-          }
-
-      - name: Install Android NDK
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $sdkRoot = $env:ANDROID_HOME
-
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
-
-          if (!$sdkRoot) {
-            throw "Android SDK path not found"
-          }
-
-          $sdkManager = Join-Path $sdkRoot `
-            "cmdline-tools\latest\bin\sdkmanager.bat"
-
-          if (!(Test-Path $sdkManager)) {
-            throw "Android SDK Manager not found"
-          }
-
-          & $sdkManager `
-            --sdk_root="$sdkRoot" `
-            "ndk;21.4.7075529" `
-            "platforms;android-25" `
-            "build-tools;28.0.3"
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Android SDK installation failed"
-          }
-
-          $env:VS_NdkRoot = Join-Path $sdkRoot `
-            "ndk\21.4.7075529"
-
-          Write-Host "NDK installed: $env:VS_NdkRoot"
-
-      - name: Diagnose Apache Ant environment
-        run: |
-          Write-Host "===== JAVA ====="
-          Write-Host "JAVA_HOME=$env:JAVA_HOME"
-          java -version
-
-          Write-Host "===== APACHE ANT ====="
-          Write-Host "ANT_HOME=$env:ANT_HOME"
-
-          $ant = Get-Command ant.bat `
-            -ErrorAction SilentlyContinue
-
-          if ($ant) {
-            Write-Host "Ant executable: $($ant.Source)"
-            & $ant.Source -version
-          }
-          else {
-            Write-Host "Apache Ant is not available in PATH"
-          }
-
-          Write-Host "===== ANDROID SDK ====="
-          Write-Host "ANDROID_HOME=$env:ANDROID_HOME"
-          Write-Host "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT"
-
-          $sdkRoot = $env:ANDROID_HOME
-
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
-
-          if ($sdkRoot) {
-            $legacyAnt = Join-Path $sdkRoot `
-              "tools\ant\build.xml"
-
-            Write-Host "Legacy Ant build.xml exists:"
-            Write-Host (Test-Path $legacyAnt)
-          }
-
-          Write-Host "===== MSBUILD ANDROID TOOLS ====="
-
-          Get-ChildItem Env: |
-            Where-Object {
-              $_.Name -match "ANT|JAVA|ANDROID"
-            } |
-            Format-Table -AutoSize
-
-      - name: Configure Apache Ant
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $antHome = $env:ANT_HOME
-
-          if (!$antHome) {
-            throw "ANT_HOME is not defined"
-          }
-
-          $antExe = Join-Path $antHome "bin\ant.bat"
-
-          if (!(Test-Path $antExe)) {
-            throw "Apache Ant executable not found"
-          }
-
-          $env:PATH = "$antHome\bin;$env:PATH"
-
-          "ANT_HOME=$antHome" | Out-File `
-            -FilePath $env:GITHUB_ENV `
-            -Append -Encoding utf8
-
-          "$antHome\bin" | Out-File `
-            -FilePath $env:GITHUB_PATH `
-            -Append -Encoding utf8
-
-          Write-Host "===== VERIFY APACHE ANT ====="
-
-          & $antExe -version
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Apache Ant verification failed"
-          }
-
-      - name: Install legacy Android SDK Tools
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $sdkRoot = $env:ANDROID_HOME
-
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
-
-          if (!$sdkRoot) {
-            throw "Android SDK path not found"
-          }
-
-          $url = "https://dl.google.com/android/repository/tools_r25.2.5-windows.zip"
-
-          $zip = Join-Path $env:RUNNER_TEMP `
-            "android-tools-legacy.zip"
-
-          $extract = Join-Path $env:RUNNER_TEMP `
-            "android-tools-legacy"
-
-          Write-Host "===== DOWNLOAD LEGACY SDK TOOLS ====="
-
-          Invoke-WebRequest `
-            -Uri $url `
-            -OutFile $zip
-
-          Write-Host "===== EXTRACT LEGACY SDK TOOLS ====="
-
-          Expand-Archive `
-            -Path $zip `
-            -DestinationPath $extract `
-            -Force
-
-          $legacyTools = Join-Path $extract "tools"
-
-          $legacyBuild = Join-Path $legacyTools `
-            "ant\build.xml"
-
-          if (!(Test-Path $legacyBuild)) {
-            throw "Legacy Android Ant build.xml not found"
-          }
-
-          Write-Host "===== INSTALL LEGACY ANT RULES ====="
-
-          $target = Join-Path $sdkRoot "tools\ant"
-
-          New-Item `
-            -ItemType Directory `
-            -Path $target `
-            -Force | Out-Null
-
-          Copy-Item `
-            -Path (Join-Path $legacyTools "ant\*") `
-            -Destination $target `
-            -Recurse `
-            -Force
-
-          Write-Host "===== VERIFY LEGACY ANT ====="
-
-          $installedBuild = Join-Path $target "build.xml"
-
-          if (!(Test-Path $installedBuild)) {
-            throw "Legacy Android Ant installation failed"
-          }
-
-          Write-Host "Legacy Android Ant rules installed"
-
-      - name: Verify legacy Android Build Tools
-        run: |
-          $ErrorActionPreference = "Stop"
-
           $sdkRoot = $env:ANDROID_HOME
           if (!$sdkRoot) { $sdkRoot = $env:ANDROID_SDK_ROOT }
           if (!$sdkRoot) { throw "Android SDK path not found" }
+          if (!(Test-Path $sdkRoot)) { throw "SDK directory missing: $sdkRoot" }
+          "OTCV8_SDK_ROOT=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Android SDK: $sdkRoot"
 
-          $legacyBuildTools = Join-Path $sdkRoot "build-tools\28.0.3"
-          $dxPath = Join-Path $legacyBuildTools "dx.bat"
+      - name: Download and extract legacy Android SDK Tools
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://dl.google.com/android/repository/tools_r25.2.5-windows.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP "android-tools-legacy.zip"
+          $extractPath = Join-Path $env:RUNNER_TEMP "android-tools-legacy"
 
-          Write-Host "===== VERIFY BUILD TOOLS 28.0.3 ====="
-          if (!(Test-Path $dxPath)) {
-            throw "dx.bat not found: $dxPath"
-          }
+          Write-Host "===== DOWNLOAD LEGACY SDK TOOLS ====="
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Write-Host "Downloaded bytes: $((Get-Item $zipPath).Length)"
 
-          Write-Host "DX executable: $dxPath"
-          Get-ChildItem (Join-Path $sdkRoot "build-tools") -Directory |
-            Select-Object Name, FullName |
-            Format-Table -AutoSize
+          Write-Host "===== EXTRACT LEGACY SDK TOOLS ====="
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
-      
-      
+          Write-Host "===== ARCHIVE ROOT CONTENTS ====="
+          Get-ChildItem -Path $extractPath | Select-Object Name, FullName | Format-Table -AutoSize
+
+          Write-Host "===== FIND LEGACY ANT BUILD.XML ====="
+          $antBuilds = @(Get-ChildItem -Path $extractPath -Filter "build.xml" -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '[\\/]ant[\\/]build\.xml$' })
+          $antBuilds | Select-Object FullName | Format-Table -AutoSize
+          if ($antBuilds.Count -eq 0) { throw "Legacy Android Ant build.xml not found in archive" }
+
+          $sourceTools = Split-Path (Split-Path $antBuilds[0].FullName -Parent) -Parent
+          $targetTools = Join-Path $env:OTCV8_SDK_ROOT "tools"
+          Write-Host "Source tools directory: $sourceTools"
+          Write-Host "Target tools directory: $targetTools"
+
+          New-Item -ItemType Directory -Path $targetTools -Force | Out-Null
+          Copy-Item -Path (Join-Path $sourceTools '*') -Destination $targetTools -Recurse -Force
+
+          "OTCV8_LEGACY_EXTRACT=$extractPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Legacy tools copied"
+
       - name: Diagnose legacy Android Ant dependencies
         run: |
           $ErrorActionPreference = "Stop"
-
-          $sdkRoot = $env:ANDROID_HOME
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
-          if (!$sdkRoot) {
-            throw "Android SDK path not found"
-          }
-
-          Write-Host "===== SDK TOOLS DIRECTORY ====="
-
+          $sdkRoot = $env:OTCV8_SDK_ROOT
           $toolsPath = Join-Path $sdkRoot "tools"
 
+          Write-Host "===== SDK TOOLS DIRECTORY ====="
           if (Test-Path $toolsPath) {
-            Get-ChildItem $toolsPath |
-              Select-Object Name, FullName |
-              Format-Table -AutoSize
-          }
-          else {
+            Get-ChildItem -Path $toolsPath | Select-Object Name, FullName | Format-Table -AutoSize
+          } else {
             Write-Host "SDK tools directory does not exist"
           }
 
           Write-Host "===== SEARCH ANT DEPENDENCIES ====="
-
-          $matches = @(
-            Get-ChildItem `
-              -Path $sdkRoot `
-              -Recurse `
-              -File `
-              -ErrorAction SilentlyContinue |
-              Where-Object {
-                $_.Name -match "anttasks|emma|sdklib|sdkmanager"
-              }
-          )
-
-          $matches |
-            Select-Object FullName |
-            Format-Table -AutoSize
+          Get-ChildItem -Path $toolsPath -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'anttasks|emma|sdklib|sdkmanager|\.jar$' } |
+            Select-Object FullName, Length | Format-Table -AutoSize
 
           Write-Host "===== CHECK LEGACY PATHS ====="
-
           foreach ($relativePath in @(
-            "tools\ant\build.xml",
-            "tools\lib",
-            "tools\lib\anttasks.jar",
-            "tools\lib\sdklib.jar"
+            'tools\ant\build.xml',
+            'tools\lib',
+            'tools\lib\anttasks.jar',
+            'tools\lib\sdklib.jar'
           )) {
             $path = Join-Path $sdkRoot $relativePath
-            Write-Host "$relativePath : $(Test-Path $path)"
+            Write-Host "${relativePath}: $(Test-Path $path)"
           }
 
           Write-Host "===== LEGACY PACKAGE CONTENTS ====="
+          Get-ChildItem -Path $env:OTCV8_LEGACY_EXTRACT -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'anttasks|emma|sdklib|build\.xml|\.jar$' } |
+            Select-Object FullName, Length | Format-Table -AutoSize
 
-          $extract = Join-Path $env:RUNNER_TEMP `
-            "android-tools-legacy"
-
-          if (Test-Path $extract) {
-            Get-ChildItem `
-              -Path $extract `
-              -Recurse `
-              -File `
-              -ErrorAction SilentlyContinue |
-              Where-Object {
-                $_.Name -match "anttasks|emma|sdklib|build.xml"
-              } |
-              Select-Object FullName |
-              Format-Table -AutoSize
-          }
-
-          Write-Host "Legacy dependency diagnosis completed"
-
-
-      - name: Build Android APK
-        timeout-minutes: 40
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $sdkRoot = $env:ANDROID_HOME
-
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
-
-          if (!$sdkRoot) {
-            throw "Android SDK path not found"
-          }
-
-          $env:VS_NdkRoot = Join-Path $sdkRoot `
-            "ndk\21.4.7075529"
-
-          Write-Host "===== BUILD NATIVE LIBRARIES ====="
-
-          MSBuild.exe "android/otclientv8.sln" `
-            /p:Configuration=Release `
-            /p:Platform=ARM64 `
-            /p:BUILD_REVISION=${{ github.run_number }} `
-            /m
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Native compilation failed"
-          }
-
-          Write-Host "===== PACKAGE ANDROID APPLICATION ====="
-
-          $solutionDir = Join-Path (Get-Location).Path `
-            "android\"
-
-          $antHome = $env:ANT_HOME
-
-          if (!$antHome) {
-            throw "ANT_HOME is not defined"
-          }
-
-          $antExe = Join-Path $antHome "bin\ant.bat"
-
-          if (!(Test-Path $antExe)) {
-            throw "Apache Ant executable not found"
-          }
-
-          Write-Host "===== ANT CONFIGURATION ====="
-          Write-Host "ANT_HOME=$antHome"
-          Write-Host "ANT executable=$antExe"
-
-          $androidTargets = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\MDD\Android\V150\Android.Common.targets"
-
-          if (!(Test-Path $androidTargets)) {
-            throw "Android.Common.targets not found"
-          }
-
-          Write-Host "===== INSPECT MSBUILD ANT PROPERTIES ====="
-
-          Select-String `
-            -Path $androidTargets `
-            -Pattern "AntRootDirectory|AntHome|AntPath|ant.bat" `
-            -Context 3,3
-
-          Write-Host "===== SELECT LEGACY BUILD TOOLS FOR ANT ====="
-
-          $buildToolsRoot = Join-Path $sdkRoot "build-tools"
-          $legacyVersion = "28.0.3"
-          $legacyBuildTools = Join-Path $buildToolsRoot $legacyVersion
-          $dxPath = Join-Path $legacyBuildTools "dx.bat"
-
-          if (!(Test-Path $dxPath)) {
-            throw "Legacy dx.bat is missing: $dxPath"
-          }
-
-          # Ant selects the newest installed Build Tools automatically.
-          # Temporarily move newer versions outside the SDK before packaging.
-          $backupRoot = Join-Path $env:RUNNER_TEMP "newer-android-build-tools"
-          New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
-
-          Get-ChildItem $buildToolsRoot -Directory | ForEach-Object {
-            $version = $null
-            if ([version]::TryParse($_.Name, [ref]$version) -and
-                $version -gt [version]$legacyVersion) {
-              Write-Host "Temporarily hiding Build Tools $($_.Name)"
-              Move-Item -LiteralPath $_.FullName -Destination $backupRoot
-            }
-          }
-
-          $env:PATH = "$legacyBuildTools;$env:PATH"
-          Write-Host "Selected legacy Build Tools: $legacyVersion"
-          Write-Host "DX executable: $dxPath"
-
-          Write-Host "===== RUN ANDROID PACKAGING ====="
-
-          MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
-            /t:Build `
-            /p:Configuration=Release `
-            /p:Platform=ARM64 `
-            /p:SolutionDir="$solutionDir" `
-            /p:VS_AntHome="$antHome" `
-            /p:VS_AndroidHome="$sdkRoot" `
-            /p:BUILD_REVISION=${{ github.run_number }} `
-            /v:normal
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Android packaging failed"
-          }
-
-      - name: Diagnose Android build output
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "===== APK SEARCH ====="
-
-          $apks = @(
-            Get-ChildItem `
-              -Path "." `
-              -Filter "*.apk" `
-              -Recurse `
-              -File `
-              -ErrorAction SilentlyContinue
-          )
-
-          if ($apks.Count -gt 0) {
-            foreach ($apk in $apks) {
-              Write-Host "APK FOUND:"
-              Write-Host $apk.FullName
-              Write-Host "Size: $($apk.Length) bytes"
-            }
-
-            New-Item `
-              -ItemType Directory `
-              -Force `
-              -Path "output" | Out-Null
-
-            $apk = $apks |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1
-
-            Copy-Item `
-              -Path $apk.FullName `
-              -Destination "output/OTCv8-Tibia860-ARM64.apk"
-
-            Write-Host "APK copied successfully"
-          }
-          else {
-            Write-Host "No APK found in workspace"
-          }
-
-          Write-Host "===== ANDROID BUILD FILES ====="
-
-          Get-ChildItem `
-            -Path "android" `
-            -Recurse `
-            -File `
-            -ErrorAction SilentlyContinue |
-            Where-Object {
-              $_.Extension -in @(
-                ".apk", ".so", ".aab", ".log"
-              )
-            } |
-            Select-Object FullName, Length |
-            Format-Table -AutoSize
-
-          Write-Host "===== ANDROID PROJECTS ====="
-
-          Get-ChildItem `
-            -Path "android" `
-            -Recurse `
-            -File `
-            -Include "*.sln", "*.androidproj", "*.vcxproj" |
-            Select-Object FullName |
-            Format-Table -AutoSize
-
-          if ($apks.Count -eq 0) {
-            throw "Build finished but no APK was found"
-          }
-
-      - name: Upload Android APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: OTCv8-Tibia860-Android
-          path: output/OTCv8-Tibia860-ARM64.apk
-          if-no-files-found: error
-          retention-days: 30
+          Write-Host "===== ANT HOME ====="
+          Write-Host "ANT_HOME=$env:ANT_HOME"
+          Write-Host "===== DIAGNOSIS COMPLETE - BUILD DISABLED ====="
