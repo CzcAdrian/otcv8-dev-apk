@@ -344,58 +344,81 @@ jobs:
             Format-Table -AutoSize
 
       
-      - name: Configure legacy Ant dependencies
+      
+      - name: Diagnose legacy Android Ant dependencies
         run: |
           $ErrorActionPreference = "Stop"
 
           $sdkRoot = $env:ANDROID_HOME
-
           if (!$sdkRoot) {
             $sdkRoot = $env:ANDROID_SDK_ROOT
           }
-
-          $toolsLib = Join-Path $sdkRoot "tools\lib"
-          $antHome = $env:ANT_HOME
-
-          if (!(Test-Path $toolsLib)) {
-            throw "Android SDK tools/lib directory missing"
+          if (!$sdkRoot) {
+            throw "Android SDK path not found"
           }
 
-          if (!$antHome) {
-            throw "ANT_HOME is not defined"
+          Write-Host "===== SDK TOOLS DIRECTORY ====="
+
+          $toolsPath = Join-Path $sdkRoot "tools"
+
+          if (Test-Path $toolsPath) {
+            Get-ChildItem $toolsPath |
+              Select-Object Name, FullName |
+              Format-Table -AutoSize
+          }
+          else {
+            Write-Host "SDK tools directory does not exist"
           }
 
-          Write-Host "===== LEGACY ANT JARS ====="
+          Write-Host "===== SEARCH ANT DEPENDENCIES ====="
 
-          $jars = @(
+          $matches = @(
             Get-ChildItem `
-              -Path $toolsLib `
-              -Filter "*.jar" `
-              -File
+              -Path $sdkRoot `
+              -Recurse `
+              -File `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match "anttasks|emma|sdklib|sdkmanager"
+              }
           )
 
-          foreach ($jar in $jars) {
-            Write-Host $jar.Name
+          $matches |
+            Select-Object FullName |
+            Format-Table -AutoSize
+
+          Write-Host "===== CHECK LEGACY PATHS ====="
+
+          foreach ($relativePath in @(
+            "tools\ant\build.xml",
+            "tools\lib",
+            "tools\lib\anttasks.jar",
+            "tools\lib\sdklib.jar"
+          )) {
+            $path = Join-Path $sdkRoot $relativePath
+            Write-Host "$relativePath : $(Test-Path $path)"
           }
 
-          if ($jars.Count -eq 0) {
-            throw "No legacy Android JAR files found"
+          Write-Host "===== LEGACY PACKAGE CONTENTS ====="
+
+          $extract = Join-Path $env:RUNNER_TEMP `
+            "android-tools-legacy"
+
+          if (Test-Path $extract) {
+            Get-ChildItem `
+              -Path $extract `
+              -Recurse `
+              -File `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match "anttasks|emma|sdklib|build.xml"
+              } |
+              Select-Object FullName |
+              Format-Table -AutoSize
           }
 
-          Write-Host "===== CONFIGURE ANT CLASSPATH ====="
+          Write-Host "Legacy dependency diagnosis completed"
 
-          $classpath = (
-            $jars | ForEach-Object {
-              $_.FullName
-            }
-          ) -join ";"
-
-          "CLASSPATH=$classpath" |
-            Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Append -Encoding utf8
-
-          Write-Host "Legacy Ant classpath configured"
 
       - name: Build Android APK
         timeout-minutes: 40
