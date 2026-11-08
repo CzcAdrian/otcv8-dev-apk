@@ -40,6 +40,10 @@ jobs:
             --pattern "Tibia.spr" `
             --dir $assetPath
 
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download Tibia assets"
+          }
+
           foreach ($file in @("Tibia.dat", "Tibia.spr")) {
             $path = Join-Path $assetPath $file
 
@@ -56,7 +60,6 @@ jobs:
             Write-Host "$file : $($info.Length) bytes"
           }
 
-      
       - name: Create Android data.zip
         run: |
           $ErrorActionPreference = "Stop"
@@ -64,6 +67,10 @@ jobs:
           powershell.exe -NoProfile `
             -ExecutionPolicy Bypass `
             -File .\create_android_assets.ps1
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Android asset generation failed"
+          }
 
           $zipPath = "android/otclientv8/assets/data.zip"
 
@@ -92,6 +99,7 @@ jobs:
             )) {
               if ($entries -notcontains $file) {
                 Write-Host "ZIP entries containing things:"
+
                 $entries | Where-Object {
                   $_ -match "things"
                 } | ForEach-Object {
@@ -109,7 +117,6 @@ jobs:
           finally {
             $zip.Dispose()
           }
-
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -166,9 +173,7 @@ jobs:
 
           Write-Host "NDK installed: $env:VS_NdkRoot"
 
-      
       - name: Diagnose Apache Ant environment
-        shell: pwsh
         run: |
           Write-Host "===== JAVA ====="
           Write-Host "JAVA_HOME=$env:JAVA_HOME"
@@ -177,7 +182,8 @@ jobs:
           Write-Host "===== APACHE ANT ====="
           Write-Host "ANT_HOME=$env:ANT_HOME"
 
-          $ant = Get-Command ant.bat -ErrorAction SilentlyContinue
+          $ant = Get-Command ant.bat `
+            -ErrorAction SilentlyContinue
 
           if ($ant) {
             Write-Host "Ant executable: $($ant.Source)"
@@ -192,33 +198,40 @@ jobs:
           Write-Host "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT"
 
           $sdkRoot = $env:ANDROID_HOME
+
           if (!$sdkRoot) {
             $sdkRoot = $env:ANDROID_SDK_ROOT
           }
 
           if ($sdkRoot) {
-            $legacyAnt = Join-Path $sdkRoot "tools/ant/build.xml"
+            $legacyAnt = Join-Path $sdkRoot `
+              "tools\ant\build.xml"
 
             Write-Host "Legacy Ant build.xml exists:"
             Write-Host (Test-Path $legacyAnt)
           }
 
           Write-Host "===== MSBUILD ANDROID TOOLS ====="
+
           Get-ChildItem Env: |
             Where-Object {
               $_.Name -match "ANT|JAVA|ANDROID"
             } |
             Format-Table -AutoSize
 
-      
       - name: Configure Apache Ant
-        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           $antHome = $env:ANT_HOME
 
-          if (!(Test-Path "$antHome\bin\ant.bat")) {
+          if (!$antHome) {
+            throw "ANT_HOME is not defined"
+          }
+
+          $antExe = Join-Path $antHome "bin\ant.bat"
+
+          if (!(Test-Path $antExe)) {
             throw "Apache Ant executable not found"
           }
 
@@ -233,27 +246,52 @@ jobs:
             -Append -Encoding utf8
 
           Write-Host "===== VERIFY APACHE ANT ====="
-          & "$antHome\bin\ant.bat" -version
 
-      
+          & $antExe -version
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Apache Ant verification failed"
+          }
+
       - name: Install legacy Android SDK Tools
-        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
           $sdkRoot = $env:ANDROID_HOME
+
+          if (!$sdkRoot) {
+            $sdkRoot = $env:ANDROID_SDK_ROOT
+          }
+
+          if (!$sdkRoot) {
+            throw "Android SDK path not found"
+          }
+
           $url = "https://dl.google.com/android/repository/tools_r25.2.5-windows.zip"
-          $zip = Join-Path $env:RUNNER_TEMP "android-tools-legacy.zip"
-          $extract = Join-Path $env:RUNNER_TEMP "android-tools-legacy"
+
+          $zip = Join-Path $env:RUNNER_TEMP `
+            "android-tools-legacy.zip"
+
+          $extract = Join-Path $env:RUNNER_TEMP `
+            "android-tools-legacy"
 
           Write-Host "===== DOWNLOAD LEGACY SDK TOOLS ====="
-          Invoke-WebRequest -Uri $url -OutFile $zip
+
+          Invoke-WebRequest `
+            -Uri $url `
+            -OutFile $zip
 
           Write-Host "===== EXTRACT LEGACY SDK TOOLS ====="
-          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          Expand-Archive `
+            -Path $zip `
+            -DestinationPath $extract `
+            -Force
 
           $legacyTools = Join-Path $extract "tools"
-          $legacyBuild = Join-Path $legacyTools "ant\build.xml"
+
+          $legacyBuild = Join-Path $legacyTools `
+            "ant\build.xml"
 
           if (!(Test-Path $legacyBuild)) {
             throw "Legacy Android Ant build.xml not found"
@@ -262,17 +300,23 @@ jobs:
           Write-Host "===== INSTALL LEGACY ANT RULES ====="
 
           $target = Join-Path $sdkRoot "tools\ant"
-          New-Item -ItemType Directory -Path $target -Force |
-            Out-Null
+
+          New-Item `
+            -ItemType Directory `
+            -Path $target `
+            -Force | Out-Null
 
           Copy-Item `
             -Path (Join-Path $legacyTools "ant\*") `
             -Destination $target `
-            -Recurse -Force
+            -Recurse `
+            -Force
 
-          Write-Host "===== VERIFY ====="
+          Write-Host "===== VERIFY LEGACY ANT ====="
 
-          if (!(Test-Path (Join-Path $target "build.xml"))) {
+          $installedBuild = Join-Path $target "build.xml"
+
+          if (!(Test-Path $installedBuild)) {
             throw "Legacy Android Ant installation failed"
           }
 
@@ -287,6 +331,10 @@ jobs:
 
           if (!$sdkRoot) {
             $sdkRoot = $env:ANDROID_SDK_ROOT
+          }
+
+          if (!$sdkRoot) {
+            throw "Android SDK path not found"
           }
 
           $env:VS_NdkRoot = Join-Path $sdkRoot `
@@ -304,24 +352,41 @@ jobs:
             throw "Native compilation failed"
           }
 
-          
           Write-Host "===== PACKAGE ANDROID APPLICATION ====="
 
-          $solutionDir = Join-Path (Get-Location).Path "android\"
+          $solutionDir = Join-Path (Get-Location).Path `
+            "android\"
+
           $antHome = $env:ANT_HOME
 
-          if (!(Test-Path (Join-Path $antHome "bin\ant.bat"))) {
+          if (!$antHome) {
+            throw "ANT_HOME is not defined"
+          }
+
+          $antExe = Join-Path $antHome "bin\ant.bat"
+
+          if (!(Test-Path $antExe)) {
             throw "Apache Ant executable not found"
           }
 
           Write-Host "===== ANT CONFIGURATION ====="
           Write-Host "ANT_HOME=$antHome"
+          Write-Host "ANT executable=$antExe"
 
           $androidTargets = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\MDD\Android\V150\Android.Common.targets"
 
-          Select-String -Path $androidTargets `
+          if (!(Test-Path $androidTargets)) {
+            throw "Android.Common.targets not found"
+          }
+
+          Write-Host "===== INSPECT MSBUILD ANT PROPERTIES ====="
+
+          Select-String `
+            -Path $androidTargets `
             -Pattern "AntRootDirectory|AntHome|AntPath|ant.bat" `
             -Context 3,3
+
+          Write-Host "===== RUN ANDROID PACKAGING ====="
 
           MSBuild.exe "android/otclientv8/otclientv8.androidproj" `
             /t:Build `
@@ -331,13 +396,10 @@ jobs:
             /p:BUILD_REVISION=${{ github.run_number }} `
             /v:normal
 
-
           if ($LASTEXITCODE -ne 0) {
             throw "Android packaging failed"
           }
 
-
-      
       - name: Diagnose Android build output
         run: |
           $ErrorActionPreference = "Stop"
@@ -345,9 +407,11 @@ jobs:
           Write-Host "===== APK SEARCH ====="
 
           $apks = @(
-            Get-ChildItem -Path "." `
+            Get-ChildItem `
+              -Path "." `
               -Filter "*.apk" `
-              -Recurse -File `
+              -Recurse `
+              -File `
               -ErrorAction SilentlyContinue
           )
 
@@ -358,15 +422,18 @@ jobs:
               Write-Host "Size: $($apk.Length) bytes"
             }
 
-            New-Item -ItemType Directory `
-              -Force -Path "output" | Out-Null
+            New-Item `
+              -ItemType Directory `
+              -Force `
+              -Path "output" | Out-Null
 
             $apk = $apks |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 1
 
-            Copy-Item $apk.FullName `
-              "output/OTCv8-Tibia860-ARM64.apk"
+            Copy-Item `
+              -Path $apk.FullName `
+              -Destination "output/OTCv8-Tibia860-ARM64.apk"
 
             Write-Host "APK copied successfully"
           }
@@ -376,8 +443,10 @@ jobs:
 
           Write-Host "===== ANDROID BUILD FILES ====="
 
-          Get-ChildItem -Path "android" `
-            -Recurse -File `
+          Get-ChildItem `
+            -Path "android" `
+            -Recurse `
+            -File `
             -ErrorAction SilentlyContinue |
             Where-Object {
               $_.Extension -in @(
@@ -389,8 +458,10 @@ jobs:
 
           Write-Host "===== ANDROID PROJECTS ====="
 
-          Get-ChildItem -Path "android" `
-            -Recurse -File `
+          Get-ChildItem `
+            -Path "android" `
+            -Recurse `
+            -File `
             -Include "*.sln", "*.androidproj", "*.vcxproj" |
             Select-Object FullName |
             Format-Table -AutoSize
@@ -398,7 +469,6 @@ jobs:
           if ($apks.Count -eq 0) {
             throw "Build finished but no APK was found"
           }
-
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
