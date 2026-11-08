@@ -158,13 +158,11 @@ jobs:
             throw "Android SDK Manager not found"
           }
 
-          
           & $sdkManager `
             --sdk_root="$sdkRoot" `
             "ndk;21.4.7075529" `
             "platforms;android-25" `
             "build-tools;28.0.3"
-
 
           if ($LASTEXITCODE -ne 0) {
             throw "Android SDK installation failed"
@@ -255,7 +253,6 @@ jobs:
             throw "Apache Ant verification failed"
           }
 
-      
       - name: Install legacy Android SDK Tools
         run: |
           $ErrorActionPreference = "Stop"
@@ -292,92 +289,59 @@ jobs:
             -Force
 
           $legacyTools = Join-Path $extract "tools"
-          $targetTools = Join-Path $sdkRoot "tools"
 
-          if (!(Test-Path (Join-Path $legacyTools "ant\build.xml"))) {
+          $legacyBuild = Join-Path $legacyTools `
+            "ant\build.xml"
+
+          if (!(Test-Path $legacyBuild)) {
             throw "Legacy Android Ant build.xml not found"
           }
 
-          Write-Host "===== INSTALL COMPLETE LEGACY TOOLS ====="
+          Write-Host "===== INSTALL LEGACY ANT RULES ====="
+
+          $target = Join-Path $sdkRoot "tools\ant"
 
           New-Item `
             -ItemType Directory `
-            -Path $targetTools `
+            -Path $target `
             -Force | Out-Null
 
           Copy-Item `
-            -Path (Join-Path $legacyTools "*") `
-            -Destination $targetTools `
+            -Path (Join-Path $legacyTools "ant\*") `
+            -Destination $target `
             -Recurse `
             -Force
 
-          
-          Write-Host "===== VERIFY LEGACY ANT DEPENDENCIES ====="
+          Write-Host "===== VERIFY LEGACY ANT ====="
 
-          $antBuild = Join-Path $targetTools "ant\build.xml"
+          $installedBuild = Join-Path $target "build.xml"
 
-          if (!(Test-Path $antBuild)) {
-            throw "Legacy Ant build.xml is missing"
+          if (!(Test-Path $installedBuild)) {
+            throw "Legacy Android Ant installation failed"
           }
 
-          Write-Host "===== LEGACY SDK JAR FILES ====="
+          Write-Host "Legacy Android Ant rules installed"
 
-          Get-ChildItem `
-            -Path $targetTools `
-            -Filter "*.jar" `
-            -Recurse `
-            -File |
-            Select-Object FullName, Length |
-            Format-Table -AutoSize
-
-          Write-Host "===== ANT TASK DEFINITIONS ====="
-
-          Get-ChildItem `
-            -Path $targetTools `
-            -Recurse `
-            -File |
-            Where-Object {
-              $_.Name -match "ant|emma|sdk"
-            } |
-            Select-Object FullName |
-            Format-Table -AutoSize
-
-          Write-Host "Legacy Android SDK Tools copied"
-          Write-Host "Ant build.xml: $antBuild"
-
-
-      
-      - name: Configure legacy Android Build Tools
+      - name: Verify legacy Android Build Tools
         run: |
           $ErrorActionPreference = "Stop"
 
           $sdkRoot = $env:ANDROID_HOME
+          if (!$sdkRoot) { $sdkRoot = $env:ANDROID_SDK_ROOT }
+          if (!$sdkRoot) { throw "Android SDK path not found" }
 
-          if (!$sdkRoot) {
-            $sdkRoot = $env:ANDROID_SDK_ROOT
-          }
+          $legacyBuildTools = Join-Path $sdkRoot "build-tools\28.0.3"
+          $dxPath = Join-Path $legacyBuildTools "dx.bat"
 
-          $buildToolsVersion = "28.0.3"
-
-          $buildToolsPath = Join-Path $sdkRoot `
-            "build-tools\$buildToolsVersion"
-
-          $dxPath = Join-Path $buildToolsPath "dx.bat"
-
-          Write-Host "===== VERIFY LEGACY BUILD TOOLS ====="
-
+          Write-Host "===== VERIFY BUILD TOOLS 28.0.3 ====="
           if (!(Test-Path $dxPath)) {
-            throw "dx.bat not found in Build Tools 28.0.3"
+            throw "dx.bat not found: $dxPath"
           }
 
-          Write-Host "dx.bat found: $dxPath"
-
-          "ANDROID_BUILD_TOOLS_VERSION=$buildToolsVersion" |
-            Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Append -Encoding utf8
-
-          Write-Host "Legacy Build Tools verified"
+          Write-Host "DX executable: $dxPath"
+          Get-ChildItem (Join-Path $sdkRoot "build-tools") -Directory |
+            Select-Object Name, FullName |
+            Format-Table -AutoSize
 
       - name: Build Android APK
         timeout-minutes: 40
@@ -442,6 +406,35 @@ jobs:
             -Path $androidTargets `
             -Pattern "AntRootDirectory|AntHome|AntPath|ant.bat" `
             -Context 3,3
+
+          Write-Host "===== SELECT LEGACY BUILD TOOLS FOR ANT ====="
+
+          $buildToolsRoot = Join-Path $sdkRoot "build-tools"
+          $legacyVersion = "28.0.3"
+          $legacyBuildTools = Join-Path $buildToolsRoot $legacyVersion
+          $dxPath = Join-Path $legacyBuildTools "dx.bat"
+
+          if (!(Test-Path $dxPath)) {
+            throw "Legacy dx.bat is missing: $dxPath"
+          }
+
+          # Ant selects the newest installed Build Tools automatically.
+          # Temporarily move newer versions outside the SDK before packaging.
+          $backupRoot = Join-Path $env:RUNNER_TEMP "newer-android-build-tools"
+          New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+
+          Get-ChildItem $buildToolsRoot -Directory | ForEach-Object {
+            $version = $null
+            if ([version]::TryParse($_.Name, [ref]$version) -and
+                $version -gt [version]$legacyVersion) {
+              Write-Host "Temporarily hiding Build Tools $($_.Name)"
+              Move-Item -LiteralPath $_.FullName -Destination $backupRoot
+            }
+          }
+
+          $env:PATH = "$legacyBuildTools;$env:PATH"
+          Write-Host "Selected legacy Build Tools: $legacyVersion"
+          Write-Host "DX executable: $dxPath"
 
           Write-Host "===== RUN ANDROID PACKAGING ====="
 
