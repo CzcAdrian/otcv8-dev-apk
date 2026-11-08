@@ -252,6 +252,7 @@ jobs:
             throw "Apache Ant verification failed"
           }
 
+      
       - name: Install legacy Android SDK Tools
         run: |
           $ErrorActionPreference = "Stop"
@@ -288,38 +289,41 @@ jobs:
             -Force
 
           $legacyTools = Join-Path $extract "tools"
+          $targetTools = Join-Path $sdkRoot "tools"
 
-          $legacyBuild = Join-Path $legacyTools `
-            "ant\build.xml"
-
-          if (!(Test-Path $legacyBuild)) {
+          if (!(Test-Path (Join-Path $legacyTools "ant\build.xml"))) {
             throw "Legacy Android Ant build.xml not found"
           }
 
-          Write-Host "===== INSTALL LEGACY ANT RULES ====="
-
-          $target = Join-Path $sdkRoot "tools\ant"
+          Write-Host "===== INSTALL COMPLETE LEGACY TOOLS ====="
 
           New-Item `
             -ItemType Directory `
-            -Path $target `
+            -Path $targetTools `
             -Force | Out-Null
 
           Copy-Item `
-            -Path (Join-Path $legacyTools "ant\*") `
-            -Destination $target `
+            -Path (Join-Path $legacyTools "*") `
+            -Destination $targetTools `
             -Recurse `
             -Force
 
-          Write-Host "===== VERIFY LEGACY ANT ====="
+          Write-Host "===== VERIFY LEGACY ANT DEPENDENCIES ====="
 
-          $installedBuild = Join-Path $target "build.xml"
+          $antBuild = Join-Path $targetTools "ant\build.xml"
+          $antTasks = Join-Path $targetTools "lib\anttasks.jar"
 
-          if (!(Test-Path $installedBuild)) {
-            throw "Legacy Android Ant installation failed"
+          if (!(Test-Path $antBuild)) {
+            throw "Legacy Ant build.xml is missing"
           }
 
-          Write-Host "Legacy Android Ant rules installed"
+          if (!(Test-Path $antTasks)) {
+            throw "Legacy anttasks.jar is missing"
+          }
+
+          Write-Host "Legacy Android SDK Tools installed"
+          Write-Host "Ant build.xml: $antBuild"
+          Write-Host "Ant tasks: $antTasks"
 
       - name: Build Android APK
         timeout-minutes: 40
