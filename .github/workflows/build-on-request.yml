@@ -346,6 +346,39 @@ jobs:
           Write-Host "Ant build.xml: $antBuild"
 
 
+      
+      - name: Configure legacy Android Build Tools
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $sdkRoot = $env:ANDROID_HOME
+
+          if (!$sdkRoot) {
+            $sdkRoot = $env:ANDROID_SDK_ROOT
+          }
+
+          $buildToolsVersion = "28.0.3"
+
+          $buildToolsPath = Join-Path $sdkRoot `
+            "build-tools\$buildToolsVersion"
+
+          $dxPath = Join-Path $buildToolsPath "dx.bat"
+
+          Write-Host "===== VERIFY LEGACY BUILD TOOLS ====="
+
+          if (!(Test-Path $dxPath)) {
+            throw "dx.bat not found in Build Tools 28.0.3"
+          }
+
+          Write-Host "dx.bat found: $dxPath"
+
+          "ANDROID_BUILD_TOOLS_VERSION=$buildToolsVersion" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Append -Encoding utf8
+
+          Write-Host "Legacy Build Tools verified"
+
       - name: Build Android APK
         timeout-minutes: 40
         run: |
