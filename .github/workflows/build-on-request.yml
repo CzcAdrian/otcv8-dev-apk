@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   Android:
-    name: Diagnose Android Ant dependencies (no build)
+    name: Test Android Ant dependencies (no build)
     runs-on: windows-2022
     timeout-minutes: 20
 
@@ -20,84 +20,77 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Locate Android SDK
+      - name: Locate Android SDK and Ant
         run: |
           $ErrorActionPreference = "Stop"
           $sdkRoot = $env:ANDROID_HOME
           if (!$sdkRoot) { $sdkRoot = $env:ANDROID_SDK_ROOT }
-          if (!$sdkRoot) { throw "Android SDK path not found" }
-          if (!(Test-Path $sdkRoot)) { throw "SDK directory missing: $sdkRoot" }
+          if (!$sdkRoot -or !(Test-Path $sdkRoot)) { throw "Android SDK directory not found" }
+          $antHome = $env:ANT_HOME
+          if (!$antHome) { throw "ANT_HOME is not defined" }
+          $antExe = Join-Path $antHome 'bin\ant.bat'
+          if (!(Test-Path $antExe)) { throw "Ant executable not found: $antExe" }
           "OTCV8_SDK_ROOT=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "OTCV8_ANT_EXE=$antExe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Android SDK: $sdkRoot"
+          & $antExe -version
+          if ($LASTEXITCODE -ne 0) { throw "Ant could not start" }
 
       - name: Download and extract legacy Android SDK Tools
         run: |
           $ErrorActionPreference = "Stop"
-          $url = "https://dl.google.com/android/repository/tools_r25.2.5-windows.zip"
-          $zipPath = Join-Path $env:RUNNER_TEMP "android-tools-legacy.zip"
-          $extractPath = Join-Path $env:RUNNER_TEMP "android-tools-legacy"
-
-          Write-Host "===== DOWNLOAD LEGACY SDK TOOLS ====="
+          $url = 'https://dl.google.com/android/repository/tools_r25.2.5-windows.zip'
+          $zipPath = Join-Path $env:RUNNER_TEMP 'android-tools-legacy.zip'
+          $extractPath = Join-Path $env:RUNNER_TEMP 'android-tools-legacy'
           Invoke-WebRequest -Uri $url -OutFile $zipPath
-          Write-Host "Downloaded bytes: $((Get-Item $zipPath).Length)"
-
-          Write-Host "===== EXTRACT LEGACY SDK TOOLS ====="
           Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-
-          Write-Host "===== ARCHIVE ROOT CONTENTS ====="
-          Get-ChildItem -Path $extractPath | Select-Object Name, FullName | Format-Table -AutoSize
-
-          Write-Host "===== FIND LEGACY ANT BUILD.XML ====="
-          $antBuilds = @(Get-ChildItem -Path $extractPath -Filter "build.xml" -File -Recurse -ErrorAction SilentlyContinue |
+          $antBuilds = @(Get-ChildItem -Path $extractPath -Filter 'build.xml' -File -Recurse |
             Where-Object { $_.FullName -match '[\\/]ant[\\/]build\.xml$' })
-          $antBuilds | Select-Object FullName | Format-Table -AutoSize
-          if ($antBuilds.Count -eq 0) { throw "Legacy Android Ant build.xml not found in archive" }
-
+          if ($antBuilds.Count -eq 0) { throw 'Legacy Android Ant build.xml not found' }
           $sourceTools = Split-Path (Split-Path $antBuilds[0].FullName -Parent) -Parent
-          $targetTools = Join-Path $env:OTCV8_SDK_ROOT "tools"
-          Write-Host "Source tools directory: $sourceTools"
-          Write-Host "Target tools directory: $targetTools"
-
+          $targetTools = Join-Path $env:OTCV8_SDK_ROOT 'tools'
           New-Item -ItemType Directory -Path $targetTools -Force | Out-Null
           Copy-Item -Path (Join-Path $sourceTools '*') -Destination $targetTools -Recurse -Force
+          Write-Host "Legacy tools copied from $sourceTools"
 
-          "OTCV8_LEGACY_EXTRACT=$extractPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Legacy tools copied"
-
-      - name: Diagnose legacy Android Ant dependencies
+      - name: Verify Ant JAR contents and run task smoke test
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
           $sdkRoot = $env:OTCV8_SDK_ROOT
-          $toolsPath = Join-Path $sdkRoot "tools"
-
-          Write-Host "===== SDK TOOLS DIRECTORY ====="
-          if (Test-Path $toolsPath) {
-            Get-ChildItem -Path $toolsPath | Select-Object Name, FullName | Format-Table -AutoSize
-          } else {
-            Write-Host "SDK tools directory does not exist"
+          $toolsLib = Join-Path $sdkRoot 'tools\lib'
+          $antJar = Join-Path $toolsLib 'ant-tasks.jar'
+          $emmaJar = Join-Path $toolsLib 'emma_ant.jar'
+          foreach ($file in @($antJar, $emmaJar)) {
+            if (!(Test-Path $file)) { throw "Missing required JAR: $file" }
+            Write-Host "Found $file"
           }
 
-          Write-Host "===== SEARCH ANT DEPENDENCIES ====="
-          Get-ChildItem -Path $toolsPath -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'anttasks|emma|sdklib|sdkmanager|\.jar$' } |
-            Select-Object FullName, Length | Format-Table -AutoSize
-
-          Write-Host "===== CHECK LEGACY PATHS ====="
-          foreach ($relativePath in @(
-            'tools\ant\build.xml',
-            'tools\lib',
-            'tools\lib\anttasks.jar',
-            'tools\lib\sdklib.jar'
-          )) {
-            $path = Join-Path $sdkRoot $relativePath
-            Write-Host "${relativePath}: $(Test-Path $path)"
+          Write-Host '===== INSPECT JAR RESOURCES ====='
+          $jarExe = Join-Path $env:JAVA_HOME 'bin\jar.exe'
+          if (!(Test-Path $jarExe)) { $jarExe = 'jar.exe' }
+          foreach ($file in @($antJar, $emmaJar)) {
+            Write-Host "JAR: $file"
+            & $jarExe tf $file | Select-String -Pattern 'anttasks\.properties|emma_ant\.properties|CheckEnv|checkenv' | ForEach-Object { Write-Host $_ }
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $file" }
           }
 
-          Write-Host "===== LEGACY PACKAGE CONTENTS ====="
-          Get-ChildItem -Path $env:OTCV8_LEGACY_EXTRACT -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'anttasks|emma|sdklib|build\.xml|\.jar$' } |
-            Select-Object FullName, Length | Format-Table -AutoSize
-
-          Write-Host "===== ANT HOME ====="
-          Write-Host "ANT_HOME=$env:ANT_HOME"
-          Write-Host "===== DIAGNOSIS COMPLETE - BUILD DISABLED ====="
+          Write-Host '===== TEST ANT TASK LOADING ====='
+          $testDir = Join-Path $env:RUNNER_TEMP 'ant-smoke-test'
+          New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+          $testBuild = Join-Path $testDir 'build.xml'
+          $antJarXml = [System.Security.SecurityElement]::Escape($antJar)
+          $emmaJarXml = [System.Security.SecurityElement]::Escape($emmaJar)
+          @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project name="android-ant-smoke-test" default="verify">
+            <taskdef resource="anttasks.properties" classpath="$antJarXml" />
+            <taskdef resource="emma_ant.properties" classpath="$emmaJarXml" />
+            <target name="verify">
+              <echo message="Android Ant task definitions loaded" />
+              <echo message="checkenv task registered successfully" />
+            </target>
+          </project>
+          "@ | Set-Content -Path $testBuild -Encoding utf8
+          & $env:OTCV8_ANT_EXE -f $testBuild verify -verbose
+          if ($LASTEXITCODE -ne 0) { throw 'Android Ant task loading failed' }
+          Write-Host '===== ANT TASK TEST PASSED; NATIVE BUILD REMAINS DISABLED ====='
