@@ -343,6 +343,60 @@ jobs:
             Select-Object Name, FullName |
             Format-Table -AutoSize
 
+      
+      - name: Configure legacy Ant dependencies
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $sdkRoot = $env:ANDROID_HOME
+
+          if (!$sdkRoot) {
+            $sdkRoot = $env:ANDROID_SDK_ROOT
+          }
+
+          $toolsLib = Join-Path $sdkRoot "tools\lib"
+          $antHome = $env:ANT_HOME
+
+          if (!(Test-Path $toolsLib)) {
+            throw "Android SDK tools/lib directory missing"
+          }
+
+          if (!$antHome) {
+            throw "ANT_HOME is not defined"
+          }
+
+          Write-Host "===== LEGACY ANT JARS ====="
+
+          $jars = @(
+            Get-ChildItem `
+              -Path $toolsLib `
+              -Filter "*.jar" `
+              -File
+          )
+
+          foreach ($jar in $jars) {
+            Write-Host $jar.Name
+          }
+
+          if ($jars.Count -eq 0) {
+            throw "No legacy Android JAR files found"
+          }
+
+          Write-Host "===== CONFIGURE ANT CLASSPATH ====="
+
+          $classpath = (
+            $jars | ForEach-Object {
+              $_.FullName
+            }
+          ) -join ";"
+
+          "CLASSPATH=$classpath" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Append -Encoding utf8
+
+          Write-Host "Legacy Ant classpath configured"
+
       - name: Build Android APK
         timeout-minutes: 40
         run: |
