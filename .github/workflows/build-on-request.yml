@@ -158,10 +158,13 @@ jobs:
             throw "Android SDK Manager not found"
           }
 
+          
           & $sdkManager `
             --sdk_root="$sdkRoot" `
             "ndk;21.4.7075529" `
-            "platforms;android-25"
+            "platforms;android-25" `
+            "build-tools;28.0.3"
+
 
           if ($LASTEXITCODE -ne 0) {
             throw "Android SDK installation failed"
