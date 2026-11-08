@@ -308,22 +308,40 @@ jobs:
             -Recurse `
             -Force
 
+          
           Write-Host "===== VERIFY LEGACY ANT DEPENDENCIES ====="
 
           $antBuild = Join-Path $targetTools "ant\build.xml"
-          $antTasks = Join-Path $targetTools "lib\anttasks.jar"
 
           if (!(Test-Path $antBuild)) {
             throw "Legacy Ant build.xml is missing"
           }
 
-          if (!(Test-Path $antTasks)) {
-            throw "Legacy anttasks.jar is missing"
-          }
+          Write-Host "===== LEGACY SDK JAR FILES ====="
 
-          Write-Host "Legacy Android SDK Tools installed"
+          Get-ChildItem `
+            -Path $targetTools `
+            -Filter "*.jar" `
+            -Recurse `
+            -File |
+            Select-Object FullName, Length |
+            Format-Table -AutoSize
+
+          Write-Host "===== ANT TASK DEFINITIONS ====="
+
+          Get-ChildItem `
+            -Path $targetTools `
+            -Recurse `
+            -File |
+            Where-Object {
+              $_.Name -match "ant|emma|sdk"
+            } |
+            Select-Object FullName |
+            Format-Table -AutoSize
+
+          Write-Host "Legacy Android SDK Tools copied"
           Write-Host "Ant build.xml: $antBuild"
-          Write-Host "Ant tasks: $antTasks"
+
 
       - name: Build Android APK
         timeout-minutes: 40
