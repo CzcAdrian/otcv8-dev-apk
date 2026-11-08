@@ -293,11 +293,16 @@ jobs:
           if (!(Test-Path $antTasksJar)) { throw "Missing $antTasksJar" }
           if (!(Test-Path $emmaAntJar)) { throw "Missing $emmaAntJar" }
 
-          # Ant's own loader uses ANT_HOME/lib; plain CLASSPATH is not sufficient.
-          # Make Android SDK task definitions available to the actual MSBuild Ant process.
+          # Android Ant tasks depend on SDK libraries such as common.jar
+          # (com.android.utils.ILogger). Copy the complete SDK JAR set so
+          # MSBuild's Ant process uses the same classpath as this preflight.
           $antLib = Join-Path $antHome 'lib'
-          Copy-Item $antTasksJar (Join-Path $antLib 'ant-tasks.jar') -Force
-          Copy-Item $emmaAntJar (Join-Path $antLib 'emma_ant.jar') -Force
+          $sdkJars = @(Get-ChildItem -Path $toolsLib -Filter '*.jar' -File)
+          if ($sdkJars.Count -eq 0) { throw "No SDK JARs found in $toolsLib" }
+          foreach ($jar in $sdkJars) {
+            Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $antLib $jar.Name) -Force
+          }
+          Write-Host "Copied $($sdkJars.Count) Android SDK JARs into $antLib"
 
           $jarExe = Join-Path $env:JAVA_HOME 'bin\jar.exe'
           if (!(Test-Path $jarExe)) { $jarExe = 'jar.exe' }
