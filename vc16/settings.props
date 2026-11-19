@@ -49,6 +49,4 @@
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClientDependency Include="$(VcpkgInstalledDir)x86-windows-static\lib\*.lib" /></ItemGroup>
-  <ItemDefinitionGroup><Link><AdditionalDependencies>@(ClientDependency);%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
 </Project>

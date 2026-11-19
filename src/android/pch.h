@@ -25,4 +25,4 @@
 
 #include "android_native_app_glue.h"
 
-extern android_app* g_androidState;
+extern struct android_app* g_androidState;
