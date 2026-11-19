@@ -1,12 +1,12 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <PREPROCESSOR_DEFS>
         WIN32;
         _CRT_SECURE_NO_WARNINGS;
-        _WIN32_WINNT=0x0501;
-		    WINVER=0x0501;
+        _WIN32_WINNT=0x0601;
+		    WINVER=0x0601;
         OTCLIENT;
         CRASH_HANDLER;
         FW_GRAPHICS;
@@ -17,28 +17,8 @@
         AB;
         NOMINMAX;
     </PREPROCESSOR_DEFS>
-    
-    <OTCLIENT_LIBDEPS>
-        zlib.lib;
-        libssl.lib;
-        physfs-static.lib;
-        winmm.lib;
-        lua51.lib;
-        dbghelp.lib;
-        kernel32.lib;
-        user32.lib;
-        shell32.lib;
-        gdi32.lib;
-        advapi32.lib;
-    		Ole32.lib;
-        psapi.lib;
-        bcrypt.lib;		
-        ucrt.lib;
-        vcruntime.lib;
-        msvcrt.lib;
-        mincore_downlevel.lib;
-        mincore.lib;    
-    </OTCLIENT_LIBDEPS>
+
+    <OTCLIENT_LIBDEPS>winmm.lib;dbghelp.lib;kernel32.lib;user32.lib;shell32.lib;gdi32.lib;advapi32.lib;ole32.lib;psapi.lib;bcrypt.lib;crypt32.lib;ws2_32.lib;version.lib;</OTCLIENT_LIBDEPS>
   </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(ProjectDir)../</OutDir>
@@ -54,7 +34,7 @@
       $(PREPROCESSOR_DEFS);
       BUILD_REVISION=$(BUILD_REVISION)
     </PREPROCESSOR_DEFS>
-  </PropertyGroup>  
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -63,10 +43,12 @@
     <Link>
       <AdditionalDependencies>$(OTCLIENT_LIBDEPS)</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
+
       <LargeAddressAware>true</LargeAddressAware>
       <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
+  <ItemGroup><ClientDependency Include="$(VcpkgInstalledDir)x86-windows-static\lib\*.lib" /></ItemGroup>
+  <ItemDefinitionGroup><Link><AdditionalDependencies>@(ClientDependency);%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
 </Project>
