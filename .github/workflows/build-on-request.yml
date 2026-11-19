@@ -40,11 +40,17 @@ jobs:
         with:
           path: .vcpkg-cache
           key: win32-static-vcpkg-f7423ee180c4b7f40d43402c2feb3859161ef625
+          restore-keys: win32-static-vcpkg-f7423ee180c4b7f40d43402c2feb3859161ef625-
       - name: Install pinned native dependencies
         env:
           VCPKG_MAX_CONCURRENCY: '2'
+          VCPKG_KEEP_ENV_VARS: PKG_CONFIG
         run: |
           $ErrorActionPreference = 'Stop'
+          $pkg = @('C:/Strawberry/c/bin/pkg-config.exe','C:/msys64/mingw64/bin/pkg-config.exe','C:/msys64/ucrt64/bin/pkg-config.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$pkg) { choco install pkgconfiglite -y --no-progress; $pkg = (Get-Command pkg-config.exe).Source }
+          $env:PKG_CONFIG=$pkg
+          & $pkg --version
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP/vcpkg"
           git -C "$env:RUNNER_TEMP/vcpkg" checkout f7423ee180c4b7f40d43402c2feb3859161ef625
           & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
@@ -54,6 +60,12 @@ jobs:
           & "$env:RUNNER_TEMP/vcpkg/vcpkg.exe" install --triplet x86-windows-static --x-install-root="$env:RUNNER_TEMP/installed" boost-iostreams boost-asio boost-beast boost-system boost-variant boost-lockfree boost-process boost-program-options boost-uuid boost-filesystem luajit glew physfs openal-soft libogg libvorbis zlib libzip bzip2 openssl liblzma
           if ($LASTEXITCODE) { throw 'Dependency build failed' }
           & "$env:RUNNER_TEMP/vcpkg/vcpkg.exe" integrate install
+      - name: Save compiled dependency cache even after a later failure
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: win32-static-vcpkg-f7423ee180c4b7f40d43402c2feb3859161ef625-${{ github.run_id }}
       - name: Build portable Windows executable
         run: |
           msbuild vc16/otclient.vcxproj /m:2 /p:Configuration=OpenGL /p:Platform=Win32 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:VcpkgInstalledDir="$env:RUNNER_TEMP/installed/" /p:VcpkgRoot="$env:RUNNER_TEMP/vcpkg/" /p:BUILD_REVISION=${{ github.run_number }} /verbosity:minimal
