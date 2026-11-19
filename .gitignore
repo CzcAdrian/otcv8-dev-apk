@@ -138,3 +138,6 @@ android-modern/app/build/
 android-modern/local.properties
 build-client/
 dist/
+
+__pycache__/
+*.pyc

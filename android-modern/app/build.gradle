@@ -1,0 +1,26 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.otclientv8'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+    defaultConfig {
+        applicationId 'com.czcadrian.tibia860'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0-dev'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild {
+            cmake { arguments "-DANDROID_DEPS=${System.getenv('ANDROID_DEPS')}", '-DANDROID_STL=c++_static'; cppFlags '-std=c++17' }
+        }
+    }
+    sourceSets.main {
+        manifest.srcFile '../../android/otclientv8/AndroidManifest.xml'
+        java.srcDirs = ['../../android/otclientv8/src']
+        res.srcDirs = ['../../android/otclientv8/res']
+        assets.srcDirs = ['../../android/otclientv8/assets']
+    }
+    externalNativeBuild { cmake { path '../../ci/CMakeLists.txt'; version '3.22.1' } }
+    packaging { jniLibs { useLegacyPackaging = false } }
+    buildTypes { debug { debuggable true }; release { minifyEnabled false } }
+}
